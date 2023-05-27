@@ -101,6 +101,42 @@ def _get_tile_info(img_shape, tile_shape, ambiguous_size=128):
     return tile_grid, tile_boundary, tile_cross
 
 
+
+def _post_proc_para_wrapper(pred_map_mmap_path, tile_info, func, func_kwargs):
+    """Wrapper for parallel post processing."""
+    idx, tile_tl, tile_br = tile_info
+    wsi_pred_map_ptr = np.load(pred_map_mmap_path, mmap_mode="r")
+    tile_pred_map = wsi_pred_map_ptr[tile_tl[0] : tile_br[0], tile_tl[1] : tile_br[1]]
+    tile_pred_map = np.array(tile_pred_map)  # from mmap to ram
+    return func(tile_pred_map, **func_kwargs), tile_info
+
+
+####
+def _assemble_and_flush(wsi_pred_map_mmap_path, chunk_info, patch_output_list):
+    """Assemble the results. Write to newly created holder for this wsi"""
+    wsi_pred_map_ptr = np.load(wsi_pred_map_mmap_path, mmap_mode="r+")
+    chunk_pred_map = wsi_pred_map_ptr[
+                     chunk_info[1][0][0] : chunk_info[1][1][0],
+                     chunk_info[1][0][1] : chunk_info[1][1][1],
+                     ]
+    if patch_output_list is None:
+        # chunk_pred_map[:] = 0 # zero flush when there is no-results
+        # print(chunk_info.flatten(), 'flush 0')
+        return
+
+    for pinfo in patch_output_list:
+        pcoord, pdata = pinfo
+        pdata = np.squeeze(pdata)
+        pcoord = np.squeeze(pcoord)[:2]
+        chunk_pred_map[
+        pcoord[0] : pcoord[0] + pdata.shape[0],
+        pcoord[1] : pcoord[1] + pdata.shape[1],
+        ] = pdata
+    # print(chunk_info.flatten(), 'pass')
+    return
+
+
+
 ####
 def _get_chunk_patch_info(
         img_shape, chunk_input_shape, patch_input_shape, patch_output_shape
